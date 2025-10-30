@@ -2,49 +2,52 @@ package com.bankapp.service;
 
 import com.bankapp.model.Account;
 import com.bankapp.model.User;
+import com.bankapp.util.AccountProperties;
+import com.bankapp.util.TransactionHelper;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 public class UserService {
 
-    private final AtomicInteger idGenerator = new AtomicInteger(1);
     private final AccountService accountService;
-    private final Map<Integer, User> users;
+    private final TransactionHelper transactionHelper;
+    private final AccountProperties accountProperties;
 
-    public UserService(AccountService accountService) {
+    public UserService(AccountService accountService, TransactionHelper transactionHelper, AccountProperties accountProperties) {
         this.accountService = accountService;
-        this.users = new HashMap<>();
+        this.transactionHelper = transactionHelper;
+        this.accountProperties = accountProperties;
     }
 
     public User creteUser(String login) {
-        User user = new User(idGenerator.getAndIncrement(), login);
-        Account account = accountService.createAccount(user.getId());
-        user.addAccount(account);
-        users.put(user.getId(), user);
-        return user;
+       return transactionHelper.executeinTransaction(session -> {
+            User user = new User(login);
+            Account defaultAccount=new Account(accountProperties.getBalance());
+            user.addAccount(defaultAccount);
+            session.persist(user);
+            return user;
+        });
     }
 
     public List<User> getAll() {
-        return new ArrayList<>(users.values());
+        return transactionHelper.executeinTransaction(session -> {
+            return session.createQuery("select u from User u join fetch u.accountList").list();
+        });
     }
 
-    public User getUserById(int id) {
-        return users.get(id);
-    }
-
-    public Account addAccount(Integer userId) {
-        Account account = accountService.createAccount(userId);
-        users.get(userId).addAccount(account);
-        return account;
+    public User getUserById(Long id) {
+        return transactionHelper.executeinTransaction(session -> {
+            return session.find(User.class, id);
+        });
     }
 
     public boolean getUserByLogin(String login) {
-        return users.values().stream().filter(user -> login.equals(user.getLogin())).findFirst().isPresent();
+        return transactionHelper.executeinTransaction(session -> {
+            return session.createQuery("select u From User u where u.login = :login")
+                    .setParameter("login", login)
+                    .uniqueResult() != null;
+        });
     }
 }

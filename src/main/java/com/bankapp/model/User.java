@@ -1,37 +1,49 @@
 package com.bankapp.model;
 
+import jakarta.persistence.*;
+
 import java.util.ArrayList;
 import java.util.List;
 
+@Entity
+@Table(name="users")
 public class User {
 
-    private Integer id;
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name="login")
     private String login;
+
+    @OneToMany(mappedBy = "user", cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     private List<Account> accountList= new ArrayList<>();
 
-    public User(Integer id, String login) {
-        this.id = id;
+    public User() {
+    }
+
+    public User(String login) {
         this.login = login;
     }
 
-    public Integer getId() {
+    public Long getId() {
         return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
     }
 
     public String getLogin() {
         return login;
     }
 
-    public List<Account> getAccountList() {
-        return accountList;
-    }
-
-    public void setId(Integer id) {
-        this.id = id;
-    }
-
     public void setLogin(String login) {
         this.login = login;
+    }
+
+    public List<Account> getAccountList() {
+        return accountList;
     }
 
     public void setAccountList(List<Account> accountList) {
@@ -40,6 +52,7 @@ public class User {
 
     public void addAccount(Account account) {
         accountList.add(account);
+        account.setUser(this);
     }
 
     @Override
@@ -47,7 +60,6 @@ public class User {
         return "User{" +
                 "id=" + id +
                 ", login='" + login + '\'' +
-                ", accountList=" + accountList +
                 '}';
     }
 }

@@ -4,6 +4,7 @@ import com.bankapp.model.Account;
 import com.bankapp.model.User;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.Scanner;
 import java.util.stream.Collectors;
 
@@ -41,13 +42,14 @@ public class OperationsConsoleListener {
                 case "2" -> {
                     System.out.println("SHOW_ALL_USERS");
                     System.out.println("List of all users:");
-                    if (userService.getAll().isEmpty()) {
+                    if (!validListOfAccounts()) {
                         System.out.println(warning);
                         System.out.println("No users found");
                         break;
                     }
                     for (User user : userService.getAll()) {
                         System.out.println(user);
+                        user.getAccountList().forEach(account -> System.out.println(account));
                     }
                 }
                 //"ACCOUNT_CREATE"
@@ -58,11 +60,11 @@ public class OperationsConsoleListener {
                     }
                     System.out.print("Enter the user id for which to create an account.\n" +
                             "List of User id's: ");
-                    Integer id = validUserId();
+                    Long id = validUserId();
                     if (id == null) {
                         break;
                     }
-                    Account account = userService.addAccount(id);
+                    Account account = accountService.createDefaultAccount(id);
                     System.out.println("New account created with ID: "
                             + account.getId() + " for user: "
                             + userService.getUserById(id).getLogin());
@@ -74,12 +76,12 @@ public class OperationsConsoleListener {
                         break;
                     }
                     System.out.println("Enter account ID  from list:");
-                    Integer id = validAccountId();
+                    Long id = validAccountId();
                     if (id == null) {
                         break;
                     }
                     System.out.print("Enter amount to deposit: ");
-                    Double amount = validAmount();
+                    BigDecimal amount = BigDecimal.valueOf(validAmount());
                     if (amount == null) {
                         break;
                     }
@@ -93,12 +95,12 @@ public class OperationsConsoleListener {
                         break;
                     }
                     System.out.print("Enter account ID to withdraw from list: ");
-                    Integer id = validAccountId();
+                    Long id = validAccountId();
                     if (id == null) {
                         break;
                     }
                     System.out.print("Enter amount to withdraw: ");
-                    Double amount = validAmount();
+                    BigDecimal amount =BigDecimal.valueOf(validAmount());
                     if (amount == null) {
                         break;
                     }
@@ -114,17 +116,17 @@ public class OperationsConsoleListener {
                         break;
                     }
                     System.out.println("Enter source account ID from list: ");
-                    Integer idSource = validAccountId();
+                    Long idSource = validAccountId();
                     if (idSource == null) {
                         break;
                     }
                     System.out.print("Enter target account ID:");
-                    Integer idTarget = validAccountId();
+                    Long idTarget = validAccountId();
                     if (idTarget == null) {
                         break;
                     }
                     System.out.print("Enter amount to transfer:");
-                    Double amount = validAmount();
+                    BigDecimal amount = BigDecimal.valueOf(validAmount());
                     if (amount == null) {
                         break;
                     }
@@ -137,7 +139,7 @@ public class OperationsConsoleListener {
                         break;
                     }
                     System.out.println("Enter account ID to close from list: ");
-                    Integer id = validAccountId();
+                    Long id = validAccountId();
                     if (id == null) {
                         break;
                     }
@@ -178,13 +180,13 @@ public class OperationsConsoleListener {
         return true;
     }
 
-    private Integer validUserId() {
+    private Long validUserId() {
         userService.getAll().stream().forEach(user -> {
             System.out.print(user.getId() + " ");
         });
         System.out.println();
         try {
-            Integer id = Integer.parseInt(scanner.nextLine().trim());
+            Long id = Long.parseLong(scanner.nextLine().trim());
             if (userService.getUserById(id) == null) {
                 System.out.println(warning);
                 System.out.println("User not found");
@@ -215,7 +217,7 @@ public class OperationsConsoleListener {
         }
     }
 
-    private Integer validAccountId() {
+    private Long validAccountId() {
         userService.getAll()
                 .stream()
                 .map(user -> user.getLogin() + " [ Account ID's: " + user.getAccountList()
@@ -225,7 +227,7 @@ public class OperationsConsoleListener {
                         + "]")
                 .forEach(System.out::println);
         try {
-            Integer id = Integer.parseInt(scanner.nextLine().trim());
+            Long id = Long.parseLong(scanner.nextLine().trim());
             if (accountService.getAccountById(id) == null) {
                 System.out.println(warning);
                 System.out.println("Account not found");
