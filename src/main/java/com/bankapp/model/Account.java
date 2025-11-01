@@ -1,12 +1,14 @@
 package com.bankapp.model;
 
+import java.math.BigDecimal;
+
 public class Account {
 
     private Integer id;
     private Integer userId;
-    private Double accountAmount;
+    private BigDecimal accountAmount;
 
-    public Account(Integer id, Integer userId, Double accountAmount) {
+    public Account(Integer id, Integer userId, BigDecimal accountAmount) {
         this.id = id;
         this.userId = userId;
         this.accountAmount = accountAmount;
@@ -28,12 +30,19 @@ public class Account {
         this.userId = userId;
     }
 
-    public Double getAccountAmount() {
+    public BigDecimal getAccountAmount() {
         return accountAmount;
     }
 
-    public void setAccountAmount(Double accountAmount) {
+    public void setAccountAmount(BigDecimal accountAmount) {
         this.accountAmount = accountAmount;
+    }
+
+    public void increaseAccountAmount(BigDecimal amount) {
+        accountAmount = accountAmount.add(amount);
+    }
+    public void decreaseAccountAmount(BigDecimal amount) {
+        accountAmount = accountAmount.subtract(amount);
     }
 
     @Override

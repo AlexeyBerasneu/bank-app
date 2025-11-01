@@ -42,6 +42,14 @@ public class User {
         accountList.add(account);
     }
 
+    public void removeAccount(Integer accountId) {
+       for (Account account : accountList) {
+           if (account.getId().equals(accountId)) {
+               accountList.remove(account);
+           }
+       }
+    }
+
     @Override
     public String toString() {
         return "User{" +

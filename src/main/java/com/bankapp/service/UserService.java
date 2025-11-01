@@ -1,50 +1,78 @@
 package com.bankapp.service;
 
-import com.bankapp.model.Account;
+import com.bankapp.exception.InvalidInputException;
+import com.bankapp.exception.NoUsersException;
+import com.bankapp.exception.UserAlreadyExistsException;
+import com.bankapp.exception.UserNotFoundException;
 import com.bankapp.model.User;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 public class UserService {
 
     private final AtomicInteger idGenerator = new AtomicInteger(1);
-    private final AccountService accountService;
     private final Map<Integer, User> users;
+    private final Scanner scanner;
 
-    public UserService(AccountService accountService) {
-        this.accountService = accountService;
+    public UserService() {
         this.users = new HashMap<>();
+        scanner = new Scanner(System.in);
     }
 
-    public User creteUser(String login) {
-        User user = new User(idGenerator.getAndIncrement(), login);
-        Account account = accountService.createAccount(user.getId());
-        user.addAccount(account);
-        users.put(user.getId(), user);
-        return user;
+    public User createUser(String login) {
+        if (login == null || login.isEmpty()) {
+            throw new InvalidInputException("Login is null or empty!!!");
+        } else if (existsUserByLogin(login)) {
+            throw new UserAlreadyExistsException(login);
+        } else {
+            User user = new User(idGenerator.getAndIncrement(), login);
+            users.put(user.getId(), user);
+            return user;
+        }
     }
 
     public List<User> getAll() {
+        existsListOfUsers();
         return new ArrayList<>(users.values());
+    }
+
+    public User getUserById() {
+        return users.get(validUserId());
     }
 
     public User getUserById(int id) {
         return users.get(id);
     }
 
-    public Account addAccount(Integer userId) {
-        Account account = accountService.createAccount(userId);
-        users.get(userId).addAccount(account);
-        return account;
+    public boolean existsUserByLogin(String login) {
+        return users.values().stream().anyMatch(user -> user.getLogin().equals(login));
     }
 
-    public boolean getUserByLogin(String login) {
-        return users.values().stream().filter(user -> login.equals(user.getLogin())).findFirst().isPresent();
+    public void existsListOfUsers() {
+        if (users.isEmpty()) {
+            throw new NoUsersException("No users found");
+        }
+    }
+
+    public Integer validUserId() {
+        try {
+            Integer id = Integer.parseInt(scanner.nextLine().trim());
+            if (getUserById(id) == null) {
+               throw new UserNotFoundException(id);
+            }
+            return id;
+        } catch (NumberFormatException e) {
+               throw new InvalidInputException("Invalid input format !");
+        }
+    }
+
+    public void deleteAccount(Integer accountId){
+        for (User user : users.values()) {
+            user.getAccountList().removeIf(acc->acc.getId().equals(accountId));
+        }
+
     }
 }
