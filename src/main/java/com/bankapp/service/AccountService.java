@@ -1,5 +1,9 @@
 package com.bankapp.service;
 
+import com.bankapp.exception.AccountException;
+import com.bankapp.exception.NoAccountsException;
+import com.bankapp.exception.NotEnoughMoneyException;
+import com.bankapp.exception.UserNotFoundException;
 import com.bankapp.model.Account;
 import com.bankapp.model.User;
 import com.bankapp.util.AccountProperties;
@@ -9,6 +13,7 @@ import org.hibernate.SessionFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -43,15 +48,24 @@ public class AccountService {
 
     public List<Account> getAllAccounts() {
         try (Session session = sessionFactory.openSession()) {
-            return session.createQuery("from Account").list();
+            List<Account> accountList = session.createQuery("from Account").list();
+            if (accountList.isEmpty()) {
+                throw new NoAccountsException("No accounts found");
+            }
+            return accountList;
         }
     }
 
-    public Account getAccountById(Long id) {
+    public Account getAccountById(Long accountId) {
         try (Session session = sessionFactory.openSession()) {
-            return session.find(Account.class, id);
+            Account account = session.find(Account.class, accountId);
+            if (account == null) {
+                throw new UserNotFoundException(accountId);
+            }
+            return account;
         }
     }
+
 
     public void deposit(Long id, BigDecimal amount) {
         transactionHelper.executeInTransaction(session -> {
@@ -60,7 +74,7 @@ public class AccountService {
         });
     }
 
-    public Boolean withdraw(Long id, BigDecimal amount) {
+    public boolean withdraw(Long id, BigDecimal amount) {
         BigDecimal tempAmount = getAccountById(id).getAccountAmount();
         if (tempAmount.compareTo(amount) == 1) {
             transactionHelper.executeInTransaction(session -> {
@@ -69,32 +83,30 @@ public class AccountService {
             });
             return true;
         } else {
-            System.out.println("Error executing command ACCOUNT_WITHDRAW: error = no such money to withdraw" +
+            throw new NotEnoughMoneyException("Executing command ACCOUNT_WITHDRAW: error = no such money to withdraw" +
                     "/ from account: id=" + id + ", moneyAmount=0" + ", attemptedWithdraw=" + amount);
-            return false;
         }
     }
 
-    public Boolean closeAccount(Long accountId) {
+    public boolean closeAccount(Long accountId) {
         return transactionHelper.executeinTransaction(session -> {
             Account fromAccount = session.find(Account.class, accountId);
             User user = fromAccount.getUser();
             List<Account> accountList = user.getAccountList();
             if (accountList.size() > 1) {
-                accountList.stream()
+                Account targerAccount= accountList.stream()
                         .filter(acc -> !acc.getId().equals(accountId))
+                        .sorted(Comparator.comparing(Account::getId))
                         .findFirst()
-                        .ifPresent(acc -> {
-                            acc.increaseAccountAmount(fromAccount.getAccountAmount());
-                        });
+                        .orElseThrow(() -> new AccountException("No account found to transfer balance"));
+                targerAccount.increaseAccountAmount(fromAccount.getAccountAmount());
                 accountList.remove(fromAccount);
                 fromAccount.setUser(null);
                 session.remove(fromAccount);
                 System.out.println("Account with ID " + accountId + " has been closed.");
                 return true;
             } else {
-                System.out.println("User has only one account ! Operation declined!");
-                return false;
+                throw new AccountException("User with id " + user.getId() + " has only one account ! Operation declined!");
             }
         });
     }
@@ -104,16 +116,17 @@ public class AccountService {
             Account fromAccount = session.find(Account.class, fromId);
             Account toAccount = session.find(Account.class, toId);
             if (fromAccount.getAccountAmount().compareTo(amount) == -1 || fromId.equals(toId)) {
-                System.out.println("Don't have enough money in account ID " + fromId + " or you put the same account Id. Operation declined!");
+                throw new NotEnoughMoneyException("Don't have enough money in account ID " + fromId + " or you put the same account Id. Operation declined!");
             } else if (fromAccount.getUser().getId().equals(toAccount.getUser().getId())) {
                 fromAccount.decreaseAccountAmount(amount);
                 toAccount.increaseAccountAmount(amount);
-                System.out.println("Amount " + amount + " transferred from account ID " + fromId + " to account ID " + toId + ".");
             } else {
                 fromAccount.decreaseAccountAmount(amount);
-                toAccount.increaseAccountAmount(amount.subtract(amount.multiply(BigDecimal.valueOf(accountProperties.getCommission() / 100)).setScale(2, BigDecimal.ROUND_HALF_UP)));
-                System.out.println("Amount " + amount + " transferred from account ID " + fromId + " to account ID " + toId + ".");
+                BigDecimal commisionPercent = BigDecimal.valueOf(accountProperties.getCommission()).divide(BigDecimal.valueOf(100));
+                BigDecimal finalAmount = amount.multiply(BigDecimal.ONE.subtract(commisionPercent));
+                toAccount.increaseAccountAmount(finalAmount);
             }
         });
     }
 }
+
