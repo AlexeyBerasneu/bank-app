@@ -11,7 +11,7 @@ public class AccountProperties {
     @Value("${account.default-amount}")
     private BigDecimal balance;
 
-    @Value("${accaount.transfer-commission}")
+    @Value("${account.transfer-commission}")
     private Double commission;
 
     public BigDecimal getBalance() {
