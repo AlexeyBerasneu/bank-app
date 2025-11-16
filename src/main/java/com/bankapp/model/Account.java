@@ -1,33 +1,36 @@
 package com.bankapp.model;
 
+import jakarta.persistence.*;
+
 import java.math.BigDecimal;
 
+@Entity
+@Table(name = "accounts")
 public class Account {
+    @Id
+    @GeneratedValue(strategy = GenerationType.SEQUENCE)
+    private Long id;
 
-    private Integer id;
-    private Integer userId;
+    @Column(name = "account_amount", precision = 10, scale = 2)
     private BigDecimal accountAmount;
 
-    public Account(Integer id, Integer userId, BigDecimal accountAmount) {
-        this.id = id;
-        this.userId = userId;
+    @ManyToOne()
+    @JoinColumn(name = "user_id")
+    private User user;
+
+    public Account() {
+    }
+
+    public Account(BigDecimal accountAmount) {
         this.accountAmount = accountAmount;
     }
 
-    public Integer getId() {
+    public Long getId() {
         return id;
     }
 
-    public void setId(Integer id) {
+    public void setId(Long id) {
         this.id = id;
-    }
-
-    public Integer getUserId() {
-        return userId;
-    }
-
-    public void setUserId(Integer userId) {
-        this.userId = userId;
     }
 
     public BigDecimal getAccountAmount() {
@@ -38,19 +41,25 @@ public class Account {
         this.accountAmount = accountAmount;
     }
 
-    public void increaseAccountAmount(BigDecimal amount) {
-        accountAmount = accountAmount.add(amount);
+    public User getUser() {
+        return user;
     }
+
+    public void setUser(User user) {
+        this.user = user;
+    }
+
+    public void increaseAccountAmount(BigDecimal amount) {
+        this.accountAmount = this.accountAmount.add(amount);
+    }
+
     public void decreaseAccountAmount(BigDecimal amount) {
-        accountAmount = accountAmount.subtract(amount);
+        this.accountAmount = this.accountAmount.subtract(amount);
     }
 
     @Override
     public String toString() {
-        return "Account{" +
-                "id=" + id +
-                ", userId=" + userId +
-                ", accountAmount=" + accountAmount +
-                '}';
+        return user + " - { account id=" + id +
+                ", accountAmount=" + accountAmount + " }";
     }
 }

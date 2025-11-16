@@ -4,75 +4,67 @@ import com.bankapp.exception.InvalidInputException;
 import com.bankapp.exception.NoUsersException;
 import com.bankapp.exception.UserAlreadyExistsException;
 import com.bankapp.exception.UserNotFoundException;
+import com.bankapp.model.Account;
 import com.bankapp.model.User;
+import com.bankapp.util.AccountProperties;
+import com.bankapp.util.TransactionHelper;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.List;
 
 @Service
 public class UserService {
 
-    private final AtomicInteger idGenerator = new AtomicInteger(1);
-    private final Map<Integer, User> users;
-    private final Scanner scanner;
 
-    public UserService() {
-        this.users = new HashMap<>();
-        scanner = new Scanner(System.in);
+    private final TransactionHelper transactionHelper;
+    private final AccountProperties accountProperties;
+
+    public UserService(TransactionHelper transactionHelper, AccountProperties accountProperties) {
+        this.transactionHelper = transactionHelper;
+        this.accountProperties = accountProperties;
     }
 
     public User createUser(String login) {
         if (login == null || login.isEmpty()) {
             throw new InvalidInputException("Login is null or empty!!!");
-        } else if (existsUserByLogin(login)) {
+        } else if (getUserByLogin(login)) {
             throw new UserAlreadyExistsException(login);
         } else {
-            User user = new User(idGenerator.getAndIncrement(), login);
-            users.put(user.getId(), user);
-            return user;
+            return transactionHelper.executeinTransaction(session -> {
+                User user = new User(login);
+                Account defaultAccount = new Account(accountProperties.getBalance());
+                user.addAccount(defaultAccount);
+                session.persist(user);
+                return user;
+            });
         }
     }
 
     public List<User> getAll() {
-        existsListOfUsers();
-        return new ArrayList<>(users.values());
-    }
-
-    public User getUserById() {
-        return users.get(validUserId());
-    }
-
-    public User getUserById(int id) {
-        return users.get(id);
-    }
-
-    public boolean existsUserByLogin(String login) {
-        return users.values().stream().anyMatch(user -> user.getLogin().equals(login));
-    }
-
-    public void existsListOfUsers() {
-        if (users.isEmpty()) {
-            throw new NoUsersException("No users found");
-        }
-    }
-
-    public Integer validUserId() {
-        try {
-            Integer id = Integer.parseInt(scanner.nextLine().trim());
-            if (getUserById(id) == null) {
-               throw new UserNotFoundException(id);
+        return transactionHelper.executeinTransaction(session -> {
+            List<User> userList= session.createQuery("select u from User u join fetch u.accountList order by u.login").list();
+            if(userList.isEmpty()) {
+                throw new NoUsersException("No users found");
             }
-            return id;
-        } catch (NumberFormatException e) {
-               throw new InvalidInputException("Invalid input format !");
-        }
+            return userList;
+        });
     }
 
-    public void deleteAccount(Integer accountId){
-        for (User user : users.values()) {
-            user.getAccountList().removeIf(acc->acc.getId().equals(accountId));
-        }
+    public User getUserById(Long id) {
+        return transactionHelper.executeinTransaction(session -> {
+            User user = session.find(User.class, id);
+            if (user == null) {
+                throw new UserNotFoundException(id);
+            }
+            return user;
+        });
+    }
 
+    public boolean getUserByLogin(String login) {
+        return transactionHelper.executeinTransaction(session -> {
+            return session.createQuery("select u From User u where u.login = :login")
+                    .setParameter("login", login)
+                    .uniqueResult() != null;
+        });
     }
 }

@@ -1,142 +1,132 @@
 package com.bankapp.service;
 
 import com.bankapp.exception.AccountException;
-import com.bankapp.exception.InvalidInputException;
+import com.bankapp.exception.NoAccountsException;
 import com.bankapp.exception.NotEnoughMoneyException;
 import com.bankapp.exception.UserNotFoundException;
 import com.bankapp.model.Account;
-import org.springframework.beans.factory.annotation.Value;
+import com.bankapp.model.User;
+import com.bankapp.util.AccountProperties;
+import com.bankapp.util.TransactionHelper;
+import org.hibernate.Session;
+import org.hibernate.SessionFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
+import java.util.Comparator;
+import java.util.List;
 
 @Service
 public class AccountService {
 
-    private final BigDecimal defaultAccountAmount;
-    private final Double transferCommission;
-    private final AtomicInteger idGenerator = new AtomicInteger(1);
-    private final Map<Integer, Account> accounts;
-    private final Scanner scanner;
+    private final SessionFactory sessionFactory;
+    private final TransactionHelper transactionHelper;
+    private final AccountProperties accountProperties;
 
-    public AccountService(
-            @Value("${account.default-amount}") BigDecimal defaultAccountAmount,
-            @Value("${account.transfer-commission}") Double transferCommission) {
-        this.defaultAccountAmount = defaultAccountAmount;
-        this.transferCommission = transferCommission;
-        this.scanner = new Scanner(System.in);
-        this.accounts = new HashMap<>();
+    public AccountService(SessionFactory sessionFactory, TransactionHelper transactionHelper, AccountProperties accountProperties) {
+        this.sessionFactory = sessionFactory;
+        this.transactionHelper = transactionHelper;
+        this.accountProperties = accountProperties;
     }
 
-    public Account createAccount(Integer userId) {
-        if (checkAccountWithUserId(userId)) {
-            Account account = new Account(idGenerator.getAndIncrement(), userId, defaultAccountAmount);
-            accounts.put(account.getId(), account);
+
+    public Account saveAccount(Account account) {
+        return transactionHelper.executeinTransaction(session -> {
+            session.persist(account);
             return account;
-        } else {
-            throw new UserNotFoundException(userId);
-        }
+        });
     }
 
-    public Account createDefaultAccount(Integer userId) {
-        Account account = new Account(idGenerator.getAndIncrement(), userId, defaultAccountAmount);
-        accounts.put(account.getId(), account);
-        return account;
+    public Account createDefaultAccount(Long userId) {
+        return transactionHelper.executeinTransaction(session -> {
+            User user = session.find(User.class, userId);
+            Account account = new Account(accountProperties.getBalance());
+            user.addAccount(account);
+            return account;
+        });
     }
 
     public List<Account> getAllAccounts() {
-        return new ArrayList<>(accounts.values());
-    }
-
-    public void deposit(Integer accountId, BigDecimal amount) {
-        accounts.get(accountId).increaseAccountAmount(amount);
-    }
-
-    public void withdraw(Integer accountId, BigDecimal amount) {
-        BigDecimal tempAmount = accounts.get(accountId).getAccountAmount();
-        if (tempAmount.compareTo(amount) >= 0) {
-            accounts.get(accountId).decreaseAccountAmount(amount);
-        } else {
-            throw new NotEnoughMoneyException("Error executing command ACCOUNT_WITHDRAW: error = no such money to withdraw" +
-                    "/ from account: id=" + accountId + ", moneyAmount=0" + ", attemptedWithdraw=" + amount);
+        try (Session session = sessionFactory.openSession()) {
+            List<Account> accountList = session.createQuery("from Account").list();
+            if (accountList.isEmpty()) {
+                throw new NoAccountsException("No accounts found");
+            }
+            return accountList;
         }
     }
 
-    public void closeAccount(Integer accountId) {
-        Account account = accounts.get(accountId);
-        Integer userId = account.getUserId();
-        List<Account> accountListByUserId = getAllAccounts()
-                .stream()
-                .filter(acc -> acc.getUserId().equals(userId))
-                .collect(Collectors.toList());
-        ;
-        if (accountListByUserId.size() > 1) {
-            BigDecimal amount = accounts.get(accountId).getAccountAmount();
-            Account targetAccount = accountListByUserId.stream()
-                    .filter(acc -> !acc.getId().equals(account.getId()))
-                    .sorted(Comparator.comparing(Account::getId))
-                    .findFirst()
-                    .orElseThrow(() -> new AccountException("No account found to transfer balance"));
-
-            targetAccount.increaseAccountAmount(amount);
-            accounts.remove(accountId);
-            System.out.println("Account with ID " + accountId + " has been closed.");
-        } else {
-            throw new AccountException("User with id " + userId + " has only one account ! Operation declined!");
+    public Account getAccountById(Long accountId) {
+        try (Session session = sessionFactory.openSession()) {
+            Account account = session.find(Account.class, accountId);
+            if (account == null) {
+                throw new UserNotFoundException(accountId);
+            }
+            return account;
         }
     }
 
-    public void transferMoney(Integer fromId, Integer toId, BigDecimal amount) {
-        BigDecimal amountFromId = accounts.get(fromId).getAccountAmount();
-        if (amountFromId.compareTo(amount) == -1) {
-            throw new NotEnoughMoneyException("Account with ID " + fromId + " is not enough money to transfer.");
-        } else if (checkAccountId(fromId, toId)) {
-            accounts.get(fromId).decreaseAccountAmount(amount);
-            accounts.get(toId).increaseAccountAmount(amount);
-            System.out.println("Amount " + amount + " transferred from account ID " + fromId + " to account ID " + toId + ".");
+
+    public void deposit(Long id, BigDecimal amount) {
+        transactionHelper.executeInTransaction(session -> {
+            Account account = session.find(Account.class, id);
+            account.increaseAccountAmount(amount);
+        });
+    }
+
+    public boolean withdraw(Long id, BigDecimal amount) {
+        BigDecimal tempAmount = getAccountById(id).getAccountAmount();
+        if (tempAmount.compareTo(amount) == 1) {
+            transactionHelper.executeInTransaction(session -> {
+                Account account = session.find(Account.class, id);
+                account.decreaseAccountAmount(amount);
+            });
+            return true;
         } else {
-            accounts.get(fromId).decreaseAccountAmount(amount);
-            BigDecimal commisionPercent=BigDecimal.valueOf(transferCommission).divide(BigDecimal.valueOf(100));
-            BigDecimal finalAmount=amount.multiply(BigDecimal.ONE.subtract(commisionPercent));
-            accounts.get(toId).increaseAccountAmount(finalAmount);
-            System.out.println("Amount " + amount + " transferred from account ID " + fromId + " to account ID " + toId + ".");
+            throw new NotEnoughMoneyException("Executing command ACCOUNT_WITHDRAW: error = no such money to withdraw" +
+                    "/ from account: id=" + id + ", moneyAmount=0" + ", attemptedWithdraw=" + amount);
         }
     }
 
-    public Boolean checkAccountId(Integer fromId, Integer toId) {
-        return accounts.get(fromId).getUserId().equals(accounts.get(toId).getUserId());
-    }
-
-    public Integer validAccountId() {
-        try {
-            Integer id = Integer.parseInt(scanner.nextLine().trim());
-            if (accounts.containsKey(id)) {
-                return id;
+    public boolean closeAccount(Long accountId) {
+        return transactionHelper.executeinTransaction(session -> {
+            Account fromAccount = session.find(Account.class, accountId);
+            User user = fromAccount.getUser();
+            List<Account> accountList = user.getAccountList();
+            if (accountList.size() > 1) {
+                Account targerAccount= accountList.stream()
+                        .filter(acc -> !acc.getId().equals(accountId))
+                        .sorted(Comparator.comparing(Account::getId))
+                        .findFirst()
+                        .orElseThrow(() -> new AccountException("No account found to transfer balance"));
+                targerAccount.increaseAccountAmount(fromAccount.getAccountAmount());
+                accountList.remove(fromAccount);
+                fromAccount.setUser(null);
+                session.remove(fromAccount);
+                System.out.println("Account with ID " + accountId + " has been closed.");
+                return true;
             } else {
-                throw new UserNotFoundException(id);
+                throw new AccountException("User with id " + user.getId() + " has only one account ! Operation declined!");
             }
-        } catch (NumberFormatException e) {
-            throw new InvalidInputException("Invalid input format !");
-        }
+        });
     }
 
-    public BigDecimal validAmount() {
-        System.out.println();
-        try {
-            BigDecimal amount = BigDecimal.valueOf(Double.valueOf(scanner.nextLine().trim()));
-            if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-                throw new InvalidInputException("Amount must be greater than zero");
+    public void transferMoney(Long fromId, Long toId, BigDecimal amount) {
+        transactionHelper.executeInTransaction(session -> {
+            Account fromAccount = session.find(Account.class, fromId);
+            Account toAccount = session.find(Account.class, toId);
+            if (fromAccount.getAccountAmount().compareTo(amount) == -1 || fromId.equals(toId)) {
+                throw new NotEnoughMoneyException("Don't have enough money in account ID " + fromId + " or you put the same account Id. Operation declined!");
+            } else if (fromAccount.getUser().getId().equals(toAccount.getUser().getId())) {
+                fromAccount.decreaseAccountAmount(amount);
+                toAccount.increaseAccountAmount(amount);
+            } else {
+                fromAccount.decreaseAccountAmount(amount);
+                BigDecimal commisionPercent = BigDecimal.valueOf(accountProperties.getCommission()).divide(BigDecimal.valueOf(100));
+                BigDecimal finalAmount = amount.multiply(BigDecimal.ONE.subtract(commisionPercent));
+                toAccount.increaseAccountAmount(finalAmount);
             }
-            return amount;
-        } catch (NumberFormatException e) {
-            throw new InvalidInputException("Invalid input format !");
-        }
-    }
-
-    private Boolean checkAccountWithUserId(Integer userId) {
-        return getAllAccounts().stream().anyMatch(acc -> acc.getUserId().equals(userId));
+        });
     }
 }
+
